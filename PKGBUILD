@@ -1,0 +1,89 @@
+# Maintainer:  Wessel Dirksen "p-we" <wdirksen at gmail dot com>
+# Contributor: Juha-Matti "suolx" Heikkala (previous maintainer)
+# Contributor: Petr Vacek "vaca" (contributing patch and code from sascng-linux3-patch and providing cardslot.conf for serial port SC readers)
+# Contributor: bas-t (responsible for hosting and further development of open-sasc-ng forked from sasc-ng rev-570)
+# Contributor: J.P. van Best (coding workaround for procfs changes on kernels >= 3.10)
+
+pkgname=open-sasc-ng
+pkgver=uname_gitver
+pkgrel=1
+pkgdesc="A SoftCAM creating virtual DVB interface"
+url="https://github.com/bas-t/sasc.git"
+arch=('i686' 'x86_64')
+license=('GPL')
+depends=('linux-headers')
+makedepends=('git' 'linux-headers>=3.10' 'linux-headers<3.11')
+conflicts=(sasc-ng)
+provides=(sasc-ng)
+backup=(etc/camdir/cardclient.conf etc/conf.d/sasc-ng etc/camdir/cardslot.conf)
+install='sasc-ng.install'
+
+_basekernel=3.10
+
+source=('git://github.com/bas-t/sasc.git'
+	"http://www.kernel.org/pub/linux/kernel/v3.x/linux-$_basekernel.tar.bz2" \
+	'cardclient.conf' 'sasc-ng.rc' 'sasc-ng.conf' \
+	'sasc-ng.lr' 'cardslot.conf' 'sasc-ng.service' \
+	'sasc-ng.install' 'kernel.patch')
+
+sha256sums=('SKIP'
+	    '46c9e55e1fddf40813b8d697d5645037a8e2af5c1a8dff52b3fe82b5021582b8'
+            '7caba03e515fe55aced4aad831e72ef3c0e59a3cdcea7bcdf79f7bfff6fcec75'
+            '99ad8ff3733d5eca5885081ad6fec65d6b3febd79f992456a3415b17db9d7aa0'
+            '0576abd9001ac17437d7613cadd51a000f8f78423b27f63af089a091dba1bd95'
+            '620da70c775ce055a3f04041cf90e6d2acf7f7a57b0eecd07f240456d0069cf4'
+            '436eb5a612aa3cb9e45bb2031429f3d41eb596ed65d18659d3bd708919c61253'
+            'd4349040392a89c83a9a0a2bf11aae7a564196a050e42aa3edb4588e5595b161'
+            'a5b3bf80c26d10765dc5881aed2faee00942cdb7d1123003f19f66b266b26933'
+            '7546b2822b604bc79deca4d04c33bbf17956cd1e9f4f74e212704b6152967691')
+
+pkgver() {
+
+	cd $srcdir/sasc
+ 	_gitver=`git describe --always | sed 's|-|.|g'`
+	_kernel=`uname -r | sed -r 's/-/_/g'`
+	echo "$_kernel"_"$_gitver"
+}
+
+prepare() {
+
+	msg "Applying patches..."
+	cd $srcdir/linux-$_basekernel
+	patch -p1 < $srcdir/kernel.patch
+}
+
+build() {
+
+	cd $srcdir/sasc/contrib/sasc-ng      
+	./configure --compiletype=release
+
+	make || return 1
+	make module || return 1
+  
+	cd $srcdir/linux-$_basekernel/drivers/media/dvb-core
+	make -C /usr/lib/modules/`uname -r`/build M=$(pwd) modules
+}
+
+package() {
+
+	mkdir -p "$pkgdir/usr/bin"
+	mkdir -p "$pkgdir/usr/lib/modules/`uname -r`/extra"
+	mkdir -p "$pkgdir/etc/conf.d"
+	mkdir -p "$pkgdir/etc/rc.d"
+	mkdir -p "$pkgdir/etc/camdir"
+	mkdir -p "$pkgdir/etc/logrotate.d/"
+	mkdir -p "$pkgdir/usr/lib/systemd/system/"
+	mkdir -p "$pkgdir/usr/lib/modules/`uname -r`/kernel/drivers/media/dvb-core"
+      
+	install -m0755 "$srcdir/sasc/contrib/sasc-ng/sasc-ng" "$pkgdir/usr/bin/"
+	install -m0644 "$srcdir/sasc/contrib/sasc-ng/dvbloopback.ko" "$pkgdir/usr/lib/modules/`uname -r`/extra"
+	install -m0755 "$srcdir/sasc-ng.rc" "$pkgdir/etc/rc.d/sasc-ng"
+	install -m0644 "$srcdir/sasc-ng.conf" "$pkgdir/etc/conf.d/sasc-ng"
+	install -m0644 "$srcdir/cardclient.conf" "$pkgdir/etc/camdir/cardclient.conf"
+	install -m0644 "$srcdir/cardslot.conf" "$pkgdir/etc/camdir/cardslot.conf"
+	install -m0644 "$srcdir/sasc-ng.lr" "$pkgdir/etc/logrotate.d/open-sasc-ng.lr"
+	install -m0644 "$srcdir/sasc-ng.service" "$pkgdir/usr/lib/systemd/system/sasc-ng.service"
+	install -m0644 "$srcdir/linux-$_basekernel/drivers/media/dvb-core/dvb-core.ko" "$pkgdir/usr/lib/modules/`uname -r`/kernel/drivers/media/dvb-core"
+	find "$pkgdir" -name '*.ko' -exec gzip -9 {} \;
+}
+
